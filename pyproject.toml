@@ -1,22 +1,24 @@
 [tool.poetry]
 name = "google-workspace-report"
-version = "0.1.0"
+version = "1.0.0"
 description = "Google Workspace Reports"
-authors = ["Ingram Micro"]
+authors = ["1.0.0"]
 license = "Apache Software License 2.0"
 packages = [
     { include = "reports" }
 ]
 readme = "./README.md"
+exclude = [
+    "tests",
+]
 
 [tool.poetry.dependencies]
-python = ">=3.8,<4"
+python = "^3.8"
+connect-openapi-client = "^24"
+openpyxl = "^3.0.5"
 
 [tool.poetry.dev-dependencies]
-connect-cli = "^26.13"
-connect-openapi-client = "^24"
-
-
+connect-cli = "^24.5"
 pytest = "^6.2.1"
 pytest-cov = "^2.10.1"
 pytest-mock = "^3.4"
