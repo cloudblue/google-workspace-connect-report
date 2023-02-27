@@ -8,6 +8,7 @@ Please take into account the following:
 
 You can configure the report according to the following:
 
-- Request creation date range
-- List of transaction types (test, production)
+- Subscription creation date range
+- Transaction type (test, production)
 - List of marketplaces
+- Subscription status
