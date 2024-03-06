@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "google-workspace-report"
-version = "1.0.0"
+version = "1.0.1"
 description = "Google Workspace Reports"
 authors = ["1.0.0"]
 license = "Apache Software License 2.0"
@@ -11,16 +11,16 @@ readme = "./README.md"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-connect-openapi-client = "^24"
+connect-openapi-client = "^29.3"
 openpyxl = "^3.0.5"
 pygments = "^2.14.0"
 
 [tool.poetry.dev-dependencies]
-connect-cli = "^24.5"
+connect-cli = "^29.2"
 pytest = "^6.2.1"
 pytest-cov = "^2.10.1"
 pytest-mock = "^3.4"
-responses = "^0.12"
+responses = ">=0.14.0,<1"
 coverage = { extras = ["toml"], version = "^5.3.1" }
 flake8 = "^3.8.4"
 flake8-broken-line = "^0"

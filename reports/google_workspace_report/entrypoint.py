@@ -72,7 +72,7 @@ def _get_subscriptions(client, parameters):
     if parameters.get('status') and parameters['status']['all'] is False:
         query &= R().status.oneof(parameters['status']['choices'])
 
-    return client.ns('subscriptions').assets.filter(query)
+    return client.assets.filter(query)
 
 
 def calculate_period(delta, uom):

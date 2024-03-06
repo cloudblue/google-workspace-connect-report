@@ -3,3 +3,7 @@ htmlcov
 .coverage
 coverage.xml
 .idea/
+.vscode/
+.env/
+.python-version
+poetry.lock
