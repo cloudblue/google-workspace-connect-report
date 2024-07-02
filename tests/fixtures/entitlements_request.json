@@ -1,0 +1,37 @@
+[
+    {
+        "name": "accounts/C01thgnne/customers/SqsV82wiovrjHy/entitlements/S1apPpUW7njWBf",
+        "create_time": "2024-06-14T10:24:31.213Z",
+        "offer": "accounts/C01thgnne/offers/U4xV88LPz6Dzl7",
+        "provisioning_state": 5,
+        "provisioned_service": {
+            "provisioning_id": "7145010831",
+            "product_id": "UADAVyrVqM6grP",
+            "sku_id": "UVOlkJnG7YE46M"
+        },
+        "suspension_reasons": [
+            4
+        ],
+        "purchase_order_id": "AS-6472-6390-5959",
+        "trial_settings": {
+            "trial": false
+        },
+        "parameters": [
+            {
+                "name": "max_units",
+                "value": {
+                    "int64_value": "1"
+                },
+                "editable": true
+            },
+            {
+                "name": "assigned_units",
+                "value": {
+                    "int64_value": "1"
+                },
+                "editable": false
+            }
+        ],
+        "billing_account": "accounts/C01thgnne/billingAccounts/1-37682-60188"
+    }
+]
