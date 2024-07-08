@@ -56,10 +56,6 @@
               "label": "Active"
             },
             {
-              "value": "processing",
-              "label": "Processing"
-            },
-            {
               "value": "suspended",
               "label": "Suspended"
             },
