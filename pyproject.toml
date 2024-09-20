@@ -14,6 +14,7 @@ python = "^3.8"
 connect-openapi-client = "^24"
 openpyxl = "^3.0.5"
 pygments = "^2.14.0"
+python-dateutil = "^2.9.0"
 
 [tool.poetry.dev-dependencies]
 connect-cli = "^24.5"

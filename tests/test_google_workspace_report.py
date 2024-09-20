@@ -6,7 +6,7 @@
 
 from copy import deepcopy
 
-from reports.google_workspace_report.http import GoogleAPIClient, GoogleAPIClientError
+from reports.http import GoogleAPIClient, GoogleAPIClientError
 from reports.google_workspace_report.entrypoint import (
     calculate_period,
     generate,

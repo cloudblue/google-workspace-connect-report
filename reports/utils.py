@@ -35,3 +35,27 @@ def parameter_value(parameter_id, parameter_list, default="-"):
         return parameter['value']
     except IndexError:
         return default
+
+
+def get_price(price_data):
+    if not price_data:
+        return '-'
+    nanos = price_data.get('nanos')
+    units = price_data.get('units')
+    currency = price_data.get('currency_code')
+    total = float(units) + float(nanos) / 10 ** 9
+
+    return "{:0.2f} {}".format(total, currency)
+
+
+def get_item_data(items):
+    if len(items) == 0:
+        return '-', '-'
+    elif len(items) == 1:
+        return items[0]['display_name'], items[0]['mpn']
+    else:
+        for item in items:
+            if 'GOOGLE_DRIVE_STORAGE' in item.get('mpn'):
+                return 'Google Drive Storage', 'GOOGLE_DRIVE_STORAGE'
+
+        return items[0]['display_name'], items[0]['mpn']

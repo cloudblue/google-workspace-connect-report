@@ -47,6 +47,24 @@ class GoogleAPIClient(object):
             return offer
         raise GoogleAPIClientError(f'Google Management Settings Error: {response.content}')
 
+    def get_biling_records(self, entitlement_id, month, year):
+        headers = {
+            "Accept": "application/json",
+            "Authorization": self.client.api_key,
+        }
+        response = requests.get(
+            '{}/api/entitlements/{}?month={}&year={}'.format(
+                self.api_url,
+                entitlement_id,
+                month,
+                year
+            ), headers=headers
+        )
+        if response.status_code == 200:
+            records = response.json()
+            return records
+        raise GoogleAPIClientError(f'Google Management Settings Error: {response.content}')
+
 
 def obtain_url_for_service(client):
     query = R()
