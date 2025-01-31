@@ -7,3 +7,6 @@ coverage.xml
 .env/
 .python-version
 poetry.lock
+.cache
+.bash_history
+.python_history
