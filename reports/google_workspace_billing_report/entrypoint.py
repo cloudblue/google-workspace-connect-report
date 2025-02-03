@@ -147,9 +147,6 @@ def _get_orders(subscription, google_client, connect_client, params):
 
     records = []
     for request in requests:
-        print("kkkkkkkkk")
-        print(subscription['id'])
-
         effective_date = convert_to_datetime(request['effective_date'])
         record = {}
         record['month_year'] = f'{effective_date.month}-{effective_date.year}'
