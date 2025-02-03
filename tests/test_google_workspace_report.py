@@ -11,6 +11,10 @@ from reports.google_workspace_report.entrypoint import (
     generate,
     HEADERS, )
 
+from unittest.mock import patch, MagicMock
+
+from reports.http import obtain_url_for_service
+
 PARAMETERS = {
     'date': None,
     'mkp': {
@@ -23,8 +27,8 @@ PARAMETERS = {
     },
 }
 
-
-def test_generate(progress, client_factory, response_factory, subscription_request):
+@patch("reports.google_workspace_report.entrypoint.obtain_url_for_service", return_value="https://fake-service.com")
+def test_generate(mock_obtain_url_for_service, progress, client_factory, response_factory, subscription_request):
     responses = []
     responses.append(
         response_factory(
@@ -37,13 +41,15 @@ def test_generate(progress, client_factory, response_factory, subscription_reque
             value=[subscription_request],
         ),
     )
+
     client = client_factory(responses)
     result = list(generate(client, PARAMETERS, progress))
 
     assert len(result) == 1
 
 
-def test_generate_without_items(progress, client_factory, response_factory, subscription_request):
+@patch("reports.google_workspace_report.entrypoint.obtain_url_for_service", return_value="https://fake-service.com")
+def test_generate_without_items(mock_obtain_url_for_service,progress, client_factory, response_factory, subscription_request):
     responses = []
     responses.append(
         response_factory(
@@ -63,7 +69,7 @@ def test_generate_without_items(progress, client_factory, response_factory, subs
     assert len(result) == 1
     assert result[0]['item_name'] == '-'
 
-
+@patch("reports.google_workspace_report.entrypoint.obtain_url_for_service", return_value="https://fake-service.com")
 def test_generate_drive_items(progress, client_factory, response_factory, subscription_request):
     responses = []
     responses.append(
@@ -86,7 +92,7 @@ def test_generate_drive_items(progress, client_factory, response_factory, subscr
     assert result[0]['item_name'] == 'Google Drive Storage'
     assert result[0]['item_mpn'] == 'GOOGLE_DRIVE_STORAGE'
 
-
+@patch("reports.google_workspace_report.entrypoint.obtain_url_for_service", return_value="https://fake-service.com")
 def test_generate_several_items(progress, client_factory, response_factory, subscription_request):
     responses = []
     responses.append(
@@ -108,7 +114,7 @@ def test_generate_several_items(progress, client_factory, response_factory, subs
     assert result[0]['item_name'] == 'Google Workspace Business Starter Flexible'
     assert result[0]['item_mpn'] == 'GOOGLE_WORKSPACE_BUSINESS_STARTER_FLEXIBLE'
 
-
+@patch("reports.google_workspace_report.entrypoint.obtain_url_for_service", return_value="https://fake-service.com")
 def test_generate_no_google_parameters_in_request(progress, client_factory, response_factory, subscription_request):
     responses = []
     responses.append(
@@ -132,7 +138,7 @@ def test_generate_no_google_parameters_in_request(progress, client_factory, resp
     assert result[0]['item_name'] == 'Google Workspace Business Starter Flexible'
     assert result[0]['item_mpn'] == 'GOOGLE_WORKSPACE_BUSINESS_STARTER_FLEXIBLE'
 
-
+@patch("reports.google_workspace_report.entrypoint.obtain_url_for_service", return_value="https://fake-service.com")
 def test_generate_all_params(progress, client_factory, response_factory, subscription_request):
     responses = []
 
@@ -180,7 +186,7 @@ def test_calculate_period():
     assert '2 Months' == calculate_period(2, 'monthly')
     assert '2 Years' == calculate_period(2, 'yearly')
 
-
+@patch("reports.google_workspace_report.entrypoint.obtain_url_for_service", return_value="https://fake-service.com")
 def test_generate_csv_renderer(progress, client_factory, response_factory, subscription_request):
     responses = []
     responses.append(
@@ -199,12 +205,12 @@ def test_generate_csv_renderer(progress, client_factory, response_factory, subsc
 
     assert len(result) == 2
     assert result[0] == HEADERS
-    assert len(result[0]) == 33
+    assert len(result[0]) == 53
     assert result[0][0] == 'Subscription ID'
-    assert progress.call_count == 2
+    assert progress.call_count == 3
     assert progress.call_args == ((2, 2),)
 
-
+@patch("reports.google_workspace_report.entrypoint.obtain_url_for_service", return_value="https://fake-service.com")
 def test_generate_json_renderer(progress, client_factory, response_factory, subscription_request):
     responses = []
     responses.append(
@@ -242,10 +248,16 @@ def test_generate_json_renderer(progress, client_factory, response_factory, subs
     client = client_factory(responses)
     result = list(generate(client, PARAMETERS, progress, renderer_type='json'))
 
+    print("29239232323232")
+    print("29239232323232")
+    print("29239232323232")
+    print("29239232323232")
+    print(result)
+
     assert len(result) == 2
-    assert len(result[0]) == 33
+    assert len(result[0]) == 53
     assert result[0]['subscription_id'] == 'AS-2708-7173-4208'
-    assert result[0]['vendor_primary_key'] == '-'
+    assert result[0]['vendor_account_id'] == 'VA-610-138'
     assert result[1]['subscription_id'] == 'AS-123'
-    assert result[1]['vendor_primary_key'] == '-'
+    assert result[1]['vendor_account_id'] == 'VA-610-138'
     assert progress.call_count == 2

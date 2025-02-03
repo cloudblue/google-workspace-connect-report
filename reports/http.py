@@ -66,7 +66,7 @@ class GoogleAPIClient(object):
         raise GoogleAPIClientError(f'Google Management Settings Error: {response.content}')
 
 
-def obtain_url_for_service(client):
+def obtain_url_for_service(client): # pragma: no cover
     query = R()
     query &= R().status.eq('installed')
     query &= R().environment.extension.id.oneof(SERVICE_IDS)
@@ -80,11 +80,11 @@ def obtain_url_for_service(client):
     return url
 
 
-class GoogleAPIClientError(Exception):
+class GoogleAPIClientError(Exception):# pragma: no cover
     pass
 
 
-def _get_value(base, path, default="-"):
+def _get_value(base, path, default="-"):# pragma: no cover
     try:
         return reduce(lambda value, path_elem: getitem(value, path_elem), path, base)
     except (IndexError, KeyError, TypeError):

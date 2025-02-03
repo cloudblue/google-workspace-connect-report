@@ -13,7 +13,7 @@ HEADERS = (
     'Subscription ID', 'Subscription External ID', 'Google Entitlement ID',
     'Subscription Type', 'Purchase Type', 'Google Domain', 'Google Customer ID', 'Item Name', 'Item MPN',
     'Google SKU', 'Google Product', 'Google Offer ID', 'Google Offer SKU Display Name',
-    'Item Quantity', 'Google Num Units', 'Google Maximum Units', 'Google Assigned Units',
+    'Item Quantity','Consumption', 'Google Num Units', 'Google Maximum Units', 'Google Assigned Units',
     'Google Offer Effective Price', 'Google Offer Price',
     'Creation date', 'Updated date', 'Google Creation Time', 'Google Commitment Start Date',
     'Google Commitment End Date', 'Google Renewal Enabled', 'Status', 'Google Entitlement Status',

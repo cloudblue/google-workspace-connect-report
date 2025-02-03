@@ -147,6 +147,7 @@ def client_factory():
 
 @pytest.fixture
 def subscription_request():
+
     with open(
             os.path.join(
                 os.getcwd(),
@@ -156,3 +157,4 @@ def subscription_request():
             ),
     ) as request:
         return json.load(request)
+
