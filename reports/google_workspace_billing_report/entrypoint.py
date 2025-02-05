@@ -193,8 +193,8 @@ def _add_renewals(records, subscription, google_subscription, purchase_date, can
             'charge_date': renewal_date,
             'start_date': purchase_date,
             'end_date': cancel_date,
-            'quantity': '-' if not last_order else last_order['asset']['items'][0]['quantity']
-
+            'quantity': '-' if not last_order else last_order['asset']['items'][0]['quantity'],
+            'consumption': _get_consumed_value_from_usage(connect_client, subscription)
         }
         records.append(record)
 
