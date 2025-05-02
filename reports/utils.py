@@ -37,6 +37,14 @@ def parameter_value(parameter_id, parameter_list, default="-"):
         return default
 
 
+def parameter_value_by_name(parameter_name, parameter_list, default="-"):
+    try:
+        parameter = list(filter(lambda param: param['name'] == parameter_name, parameter_list))[0]
+        return parameter['value']
+    except IndexError:
+        return default
+
+
 def get_price(price_data):
     if not price_data:
         return '-'

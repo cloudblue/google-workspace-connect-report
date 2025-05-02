@@ -9,7 +9,7 @@ from connect.client import R
 from dateutil.relativedelta import relativedelta
 
 from reports.http import GoogleAPIClient, GoogleAPIClientError, obtain_url_for_service
-from ..utils import convert_to_datetime, get_value, parameter_value, get_price
+from ..utils import convert_to_datetime, get_value, parameter_value, get_price, parameter_value_by_name
 
 HEADERS = (
     'Month Year', 'Subscription ID', 'Subscription External ID', 'Subscription External UUID',
@@ -89,12 +89,11 @@ def _get_active_subscriptions(client, parameters):
         query &= R().product.id.oneof(parameters['product']['choices'])
     if parameters.get('date') and parameters['date']['after'] != '':
         query &= R().events.created.at.le(parameters['date']['before'])
-        query &= R().events.updated.at.ge(parameters['date']['after'])
     if parameters.get('mkp') and parameters['mkp']['all'] is False:
         query &= R().marketplace.id.oneof(parameters['mkp']['choices'])
     if parameters.get('connection_type') and parameters['connection_type']['all'] is False:
         query &= R().asset.connection.type.oneof(parameters['connection_type']['choices'])
-    query &= R().status.oneof(['active', 'suspended', 'terminating'])
+    query &= R().status.oneof(['active', 'terminating'])
     return client.ns('subscriptions').assets.filter(query)
 
 
@@ -102,13 +101,13 @@ def _get_terminated_subscriptions(client, parameters):
     query = R()
     query &= R().product.id.oneof(GOOGLE_PRODUCTS)
     if parameters.get('date') and parameters['date']['after'] != '':
-        query &= R().events.updated.at.ge(parameters['date']['after'])
-        query &= R().events.created.at.le(parameters['date']['before'])
+        query &= R().updated.ge(parameters['date']['after'])
+        query &= R().updated.le(parameters['date']['before'])
     if parameters.get('mkp') and parameters['mkp']['all'] is False:
         query &= R().marketplace.id.oneof(parameters['mkp']['choices'])
     if parameters.get('connection_type') and parameters['connection_type']['all'] is False:
         query &= R().asset.connection.type.oneof(parameters['connection_type']['choices'])
-    query &= R().status.oneof(['terminated'])
+    query &= R().status.oneof(['terminated', 'suspended'])
 
     return client.ns('subscriptions').assets.filter(query)
 
@@ -125,7 +124,6 @@ def _get_orders(subscription, google_client, connect_client, params):
     subscription_id = subscription.get('id')
     google_subscription = _process_google_subscription(subscription, google_client)
     query = R()
-    query &= R().updated.ge(params['date']['after'])
     query &= R().updated.le(params['date']['before'])
     query &= R().type.oneof(['purchase', 'cancel', 'change'])
 
@@ -165,6 +163,10 @@ def _get_orders(subscription, google_client, connect_client, params):
         elif request['type'] == 'change':
             less_than_a_year = abs((effective_date - start_date).days) < 365
             record['charge_type'] = 'Change' if less_than_a_year else 'Renewal Change'
+            if request['asset']['items'][0]['old_quantity'] == 'unlimited':
+                request['asset']['items'][0]['old_quantity'] = -1
+            if request['asset']['items'][0]['quantity'] == 'unlimited':
+                request['asset']['items'][0]['quantity'] = -1
             old_quant = int(request['asset']['items'][0]['old_quantity'])
             current_quant = int(request['asset']['items'][0]['quantity'])
             record['quantity'] = current_quant - old_quant
@@ -235,9 +237,7 @@ def _process_google_subscription(subscription, google_client):
     params = subscription.get('params', [])
     google_customer_id = parameter_value('customer_id', params, "")
     entitlement_id = get_entitlement_id(params)
-    if not google_customer_id or not entitlement_id:
-        res = {'error': 'Subscription has missing google parameters.'}
-        return res
+
     if google_customer_id not in subscriptions_dict.keys():
         _get_google_subscriptions(google_client, google_customer_id)
     if subscriptions_dict[google_customer_id].get('error'):
@@ -273,7 +273,7 @@ def _entitlements_as_dict(entitlements):
     return result
 
 
-def _process_google_data(google_subscription):
+def _process_google_data(google_subscription, charge_type):
     data = {}
     entitlement_data = google_subscription.get('entitlement_data', {})
     sku = entitlement_data.get('sku', {})
@@ -283,11 +283,38 @@ def _process_google_data(google_subscription):
         'value', {}).get('int64_value', '-')
     data['max_units'] = get_google_parameter('max_units', google_subscription.get('parameters', {})).get(
         'value', {}).get('int64_value', '-')
-    data['effective_price'] = get_price(entitlement_data.get(
-        'price_by_resources', [{}])[0].get('price', {}).get('effective_price', {}))
-    data['base_price'] = get_price(entitlement_data.get(
-        'price_by_resources', [{}])[0].get('price', {}).get('base_price', {}))
-    data['discount'] = entitlement_data.get('price_by_resource', [{}])[0].get('price', {}).get('discount', '-')
+
+    if charge_type == 'Change':
+        phases = entitlement_data.get(
+            'price_by_resources', [{}])[0].get('price_phases', [])
+        phase_price = None
+        for phase in phases:
+            if phase.get('first_period') == 1:
+                phase_price = phase.get('price', {})
+                break
+
+        if phase_price:
+            data['effective_price'] = get_price(phase_price.get('effective_price', {}))
+            data['base_price'] = get_price(phase_price.get('base_price', {}))
+
+    elif charge_type == 'RenewalChange':
+        phases = entitlement_data.get(
+            'price_by_resources', [{}])[0].get('price_phases', [])
+        phase_price = None
+        for phase in phases:
+            if phase.get('first_period') == 13:
+                phase_price = phase.get('price', {})
+                break
+
+        if phase_price:
+            data['effective_price'] = get_price(phase_price.get('effective_price', {}))
+            data['base_price'] = get_price(phase_price.get('base_price', {}))
+    else:
+        data['effective_price'] = get_price(entitlement_data.get(
+            'price_by_resources', [{}])[0].get('price', {}).get('effective_price', {}))
+        data['base_price'] = get_price(entitlement_data.get(
+            'price_by_resources', [{}])[0].get('price', {}).get('base_price', {}))
+    data['discount'] = entitlement_data.get('price_by_resources', [{}])[0].get('price', {}).get('discount', '-')
     data['created_time'] = google_subscription.get('create_time', '-')
     data['commitment_start_date'] = google_subscription.get('commitment_settings', {}).get('start_time', '-')
     data['commitment_end_date'] = google_subscription.get('commitment_settings', {}).get('end_time', '-')
@@ -309,27 +336,29 @@ def _get_consumed_value_from_usage(client, subscription):
 def _process_line(order):
     subscription = order.get('subscription')
     item_name, item_mpn, item_period = get_item_data(subscription.get('items', []))
+    customer_mail = get_google_mail(subscription.get('params', []))
+    charge_type = order.get('charge_type')
     google_subscription = order.get('google_subscription')
-    google_data = _process_google_data(google_subscription)
+    google_data = _process_google_data(google_subscription, charge_type)
 
     return (
         order.get('month_year'),
         subscription.get('id'),
         subscription.get('external_id', '-'),
         subscription.get('external_uid', '-'),
-        subscription.get('vendor_subscription_id'),
-        order.get('charge_type'),
+        subscription.get('vendor_subscription_id', '-'),
+        charge_type,
         item_name,
         item_mpn,
         item_period,
         order.get('quantity'),
         order.get('consumption'),
-        google_data['base_price'],
-        google_data['effective_price'],
+        google_data.get('base_price', '-'),
+        google_data.get('effective_price', '-'),
         google_data['discount'],
         get_value(subscription.get('tiers', ''), 'customer', 'name'),
         get_value(subscription.get('tiers', ''), 'customer', 'external_id'),
-        get_value(subscription.get('tiers', ''), 'customer', 'email'),
+        customer_mail,
         get_value(subscription.get('tiers', ''), 'tier1', 'name'),
         get_value(subscription.get('tiers', ''), 'tier1', 'external_id'),
         subscription.get('marketplace', {}).get('name'),
@@ -370,6 +399,16 @@ def get_item_data(items):
                 return 'Google Drive Storage', 'GOOGLE_DRIVE_STORAGE', item.get('period')
 
         return items[0]['display_name'], items[0]['mpn'], items[0]['period']
+
+
+def get_google_mail(params):
+    prefix = parameter_value_by_name('admin_email', params, "")
+    domain = parameter_value_by_name('domain', params, "")
+
+    if prefix and domain:
+        return f"{prefix.strip()}@{domain.strip()}"
+    else:
+        return '-'
 
 
 class ReportException(Exception):
