@@ -87,7 +87,7 @@ def _get_active_subscriptions(client, parameters):
     query = R()
     if parameters.get('product') and parameters['product']['all'] is False:
         query &= R().product.id.oneof(parameters['product']['choices'])
-    if parameters.get('date') and parameters['date']['after'] != '':
+    if parameters.get('date') and parameters['date']['before'] != '':
         query &= R().events.created.at.le(parameters['date']['before'])
     if parameters.get('mkp') and parameters['mkp']['all'] is False:
         query &= R().marketplace.id.oneof(parameters['mkp']['choices'])
@@ -157,16 +157,16 @@ def _get_orders(subscription, google_client, connect_client, params):
         record['end_date'] = cancel_date
         start_date = convert_to_datetime(purchase.get('updated'))
         record['charge_date'] = effective_date
+        if request['asset']['items'][0]['old_quantity'] == 'unlimited':
+            request['asset']['items'][0]['old_quantity'] = -1
+        if request['asset']['items'][0]['quantity'] == 'unlimited':
+            request['asset']['items'][0]['quantity'] = -1
         if request['type'] == 'purchase':
             purchase_type = parameter_value('purchase_type', request['asset']['params'])
             record['charge_type'] = 'Transfer' if purchase_type == 'Transfer' else 'New Subscription'
         elif request['type'] == 'change':
             less_than_a_year = abs((effective_date - start_date).days) < 365
             record['charge_type'] = 'Change' if less_than_a_year else 'Renewal Change'
-            if request['asset']['items'][0]['old_quantity'] == 'unlimited':
-                request['asset']['items'][0]['old_quantity'] = -1
-            if request['asset']['items'][0]['quantity'] == 'unlimited':
-                request['asset']['items'][0]['quantity'] = -1
             old_quant = int(request['asset']['items'][0]['old_quantity'])
             current_quant = int(request['asset']['items'][0]['quantity'])
             record['quantity'] = current_quant - old_quant
@@ -279,42 +279,58 @@ def _process_google_data(google_subscription, charge_type):
     sku = entitlement_data.get('sku', {})
 
     data['product'] = sku.get('product', {}).get('name', '-')
-    data['num_units'] = get_google_parameter('num_units', google_subscription.get('parameters', {})).get(
+    data['num_units'] = get_google_parameter('num_units', google_subscription.get('parameters', [])).get(
         'value', {}).get('int64_value', '-')
-    data['max_units'] = get_google_parameter('max_units', google_subscription.get('parameters', {})).get(
+    data['max_units'] = get_google_parameter('max_units', google_subscription.get('parameters', [])).get(
+        'value', {}).get('int64_value', '-')
+    data['assigned_units'] = get_google_parameter('assigned_units', google_subscription.get('parameters', [])).get(
         'value', {}).get('int64_value', '-')
 
-    if charge_type == 'Change':
-        phases = entitlement_data.get(
-            'price_by_resources', [{}])[0].get('price_phases', [])
-        phase_price = None
-        for phase in phases:
-            if phase.get('first_period') == 1:
-                phase_price = phase.get('price', {})
-                break
+    # Get price information from price_by_resources
+    price_resources = entitlement_data.get('price_by_resources', [])
+    if price_resources and len(price_resources) > 0:
+        price_resource = price_resources[0]
+        price = price_resource.get('price', {})
+        
+        if charge_type == 'Change':
+            price_phases = price_resource.get('price_phases', [])
+            phase_price = None
+            for phase in price_phases:
+                if phase.get('first_period') == 1:
+                    phase_price = phase.get('price', {})
+                    break
 
-        if phase_price:
-            data['effective_price'] = get_price(phase_price.get('effective_price', {}))
-            data['base_price'] = get_price(phase_price.get('base_price', {}))
+            if phase_price:
+                data['effective_price'] = get_price(phase_price.get('base_price', {}))
+                data['base_price'] = get_price(phase_price.get('base_price', {}))
+            else:
+                data['effective_price'] = get_price(price.get('base_price', {}))
+                data['base_price'] = get_price(price.get('base_price', {}))
 
-    elif charge_type == 'RenewalChange':
-        phases = entitlement_data.get(
-            'price_by_resources', [{}])[0].get('price_phases', [])
-        phase_price = None
-        for phase in phases:
-            if phase.get('first_period') == 13:
-                phase_price = phase.get('price', {})
-                break
+        elif charge_type == 'RenewalChange':
+            price_phases = price_resource.get('price_phases', [])
+            phase_price = None
+            for phase in price_phases:
+                if phase.get('first_period') == 13:
+                    phase_price = phase.get('price', {})
+                    break
 
-        if phase_price:
-            data['effective_price'] = get_price(phase_price.get('effective_price', {}))
-            data['base_price'] = get_price(phase_price.get('base_price', {}))
+            if phase_price:
+                data['effective_price'] = get_price(phase_price.get('base_price', {}))
+                data['base_price'] = get_price(phase_price.get('base_price', {}))
+            else:
+                data['effective_price'] = get_price(price.get('base_price', {}))
+                data['base_price'] = get_price(price.get('base_price', {}))
+        else:
+            data['effective_price'] = get_price(price.get('base_price', {}))
+            data['base_price'] = get_price(price.get('base_price', {}))
+            
+        # Get discount as a float value
+        data['discount'] = price.get('discount', '-')
     else:
-        data['effective_price'] = get_price(entitlement_data.get(
-            'price_by_resources', [{}])[0].get('price', {}).get('effective_price', {}))
-        data['base_price'] = get_price(entitlement_data.get(
-            'price_by_resources', [{}])[0].get('price', {}).get('base_price', {}))
-    data['discount'] = entitlement_data.get('price_by_resources', [{}])[0].get('price', {}).get('discount', '-')
+        data['effective_price'] = '-'
+        data['base_price'] = '-'
+        data['discount'] = '-'
     data['created_time'] = google_subscription.get('create_time', '-')
     data['commitment_start_date'] = google_subscription.get('commitment_settings', {}).get('start_time', '-')
     data['commitment_end_date'] = google_subscription.get('commitment_settings', {}).get('end_time', '-')
@@ -346,7 +362,7 @@ def _process_line(order):
         subscription.get('id'),
         subscription.get('external_id', '-'),
         subscription.get('external_uid', '-'),
-        subscription.get('vendor_subscription_id', '-'),
+        order.get('vendor_subscription_id', '-'),
         charge_type,
         item_name,
         item_mpn,
@@ -355,21 +371,21 @@ def _process_line(order):
         order.get('consumption'),
         google_data.get('base_price', '-'),
         google_data.get('effective_price', '-'),
-        google_data['discount'],
+        google_data.get('discount', '-'),
         get_value(subscription.get('tiers', ''), 'customer', 'name'),
         get_value(subscription.get('tiers', ''), 'customer', 'external_id'),
         customer_mail,
         get_value(subscription.get('tiers', ''), 'tier1', 'name'),
         get_value(subscription.get('tiers', ''), 'tier1', 'external_id'),
         subscription.get('marketplace', {}).get('name'),
-        get_value(subscription['connection'], 'hub', 'name'),
+        get_value(subscription.get('connection', {}), 'hub', 'name'),
         get_value(subscription, 'product', 'name'),
         order.get('charge_date'),
         subscription.get('status'),
         order.get('start_date'),
         order.get('end_date'),
         exported_at,
-        google_data['error'],
+        google_data.get('error', '-'),
     )
 
 
