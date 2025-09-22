@@ -248,12 +248,6 @@ def test_generate_json_renderer(progress, client_factory, response_factory, subs
     client = client_factory(responses)
     result = list(generate(client, PARAMETERS, progress, renderer_type='json'))
 
-    print("29239232323232")
-    print("29239232323232")
-    print("29239232323232")
-    print("29239232323232")
-    print(result)
-
     assert len(result) == 2
     assert len(result[0]) == 53
     assert result[0]['subscription_id'] == 'AS-2708-7173-4208'
