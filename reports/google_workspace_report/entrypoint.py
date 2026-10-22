@@ -4,16 +4,16 @@
 # All rights reserved.
 #
 
-from connect.client import ClientError, R
+from connect.client import R
 
-from .http import GoogleAPIClient, GoogleAPIClientError, obtain_url_for_service
-from ..utils import convert_to_datetime, get_value, parameter_value
+from reports.http import GoogleAPIClient, GoogleAPIClientError, obtain_url_for_service
+from ..utils import convert_to_datetime, get_value, parameter_value, get_item_data, get_price
 
 HEADERS = (
     'Subscription ID', 'Subscription External ID', 'Google Entitlement ID',
     'Subscription Type', 'Purchase Type', 'Google Domain', 'Google Customer ID', 'Item Name', 'Item MPN',
     'Google SKU', 'Google Product', 'Google Offer ID', 'Google Offer SKU Display Name',
-    'Item Quantity', 'Google Num Units', 'Google Maximum Units', 'Google Assigned Units',
+    'Item Quantity','Consumption', 'Google Num Units', 'Google Maximum Units', 'Google Assigned Units',
     'Google Offer Effective Price', 'Google Offer Price',
     'Creation date', 'Updated date', 'Google Creation Time', 'Google Commitment Start Date',
     'Google Commitment End Date', 'Google Renewal Enabled', 'Status', 'Google Entitlement Status',
@@ -56,10 +56,10 @@ def generate(
         if renderer_type == 'json':
             yield {
                 HEADERS[idx].replace(' ', '_').lower(): value
-                for idx, value in enumerate(_process_line(subscription, google_client))
+                for idx, value in enumerate(_process_line(subscription, google_client, client))
             }
         else:
-            yield _process_line(subscription, google_client)
+            yield _process_line(subscription, google_client, client)
 
     progress += 1
     progress_callback(progress, total)
@@ -75,7 +75,7 @@ def _get_subscriptions(client, parameters):
         query &= R().marketplace.id.oneof(parameters['mkp']['choices'])
     if parameters.get('connection_type') and parameters['connection_type']['all'] is False:
         query &= R().asset.connection.type.oneof(parameters['connection_type']['choices'])
-    if parameters.get('status'):
+    if parameters.get('status') and parameters['status']['all'] is False:
         query &= R().status.oneof(parameters['status']['choices'])
     else:
         query &= R().status.oneof(['active', 'suspended', 'terminated', 'terminating'])
@@ -98,19 +98,6 @@ def search_product_primary(parameters):
     for param in parameters:
         if param['constraints'].get('reconciliation'):
             return param['name']
-
-
-def get_item_data(items):
-    if len(items) == 0:
-        return '-', '-'
-    elif len(items) == 1:
-        return items[0]['display_name'], items[0]['mpn']
-    else:
-        for item in items:
-            if 'GOOGLE_DRIVE_STORAGE' in item.get('mpn'):
-                return 'Google Drive Storage', 'GOOGLE_DRIVE_STORAGE'
-
-        return items[0]['display_name'], items[0]['mpn']
 
 
 def _process_google_subscription(subscription, google_client):
@@ -187,11 +174,22 @@ def _process_google_data(google_subscription):
     return data
 
 
-def _process_line(subscription, google_client):
+def _get_consumed_value_from_usage(client, subscription):
+    try:
+        record = client.get(f'/usage/records?asset.id={subscription["id"]}&ordering(-created_time)&limit=1&offset=0')
+        if len(record) == 0:
+            return '-'
+        return record[0].get('usage', '-')
+    except Exception:
+        return '-'
+
+
+def _process_line(subscription, google_client, connect_client):
     params = subscription.get('params', [])
     item_name, item_mpn = get_item_data(subscription.get('items', []))
     google_subscription = _process_google_subscription(subscription, google_client)
     google_data = _process_google_data(google_subscription)
+    consumption = _get_consumed_value_from_usage(connect_client, subscription)
 
     return (
         subscription.get('id'),
@@ -208,6 +206,7 @@ def _process_line(subscription, google_client):
         google_data['offer_id'],
         google_data['sku_display_name'],
         next(iter(subscription.get('items', [])), {}).get('quantity', '-'),
+        consumption,
         google_data['num_units'],
         google_data['max_units'],
         google_data['assigned_units'],
@@ -283,17 +282,6 @@ def get_suspension_reasons(value):
     if value == 100:
         return 'OTHER '
     return '-'
-
-
-def get_price(price_data):
-    if not price_data:
-        return '-'
-    nanos = price_data.get('nanos')
-    units = price_data.get('units')
-    currency = price_data.get('currency_code')
-    total = float(units) + float(nanos) / 10 ** 9
-
-    return "{:0.2f} {}".format(total, currency)
 
 
 def get_entitlement_id(params):

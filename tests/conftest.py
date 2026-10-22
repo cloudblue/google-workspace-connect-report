@@ -147,47 +147,14 @@ def client_factory():
 
 @pytest.fixture
 def subscription_request():
+
     with open(
             os.path.join(
                 os.getcwd(),
+                'tests',
                 'fixtures',
                 'subscription_request.json',
             ),
     ) as request:
         return json.load(request)
 
-
-@pytest.fixture
-def entitlements_request():
-    with open(
-        os.path.join(
-            os.getcwd(),
-            'fixtures',
-            'entitlements_request.json',
-        ),
-    ) as request:
-        return json.load(request)
-
-
-@pytest.fixture
-def entitlement_offer_request():
-    with open(
-            os.path.join(
-                os.getcwd(),
-                'fixtures',
-                'entitlement_offer_request.json',
-            ),
-    ) as request:
-        return json.load(request)
-
-
-@pytest.fixture
-def installation_list():
-    with open(
-            os.path.join(
-                os.getcwd(),
-                'fixtures',
-                'installation_list.json',
-            ),
-    ) as request:
-        return json.load(request)
