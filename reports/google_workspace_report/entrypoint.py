@@ -7,7 +7,8 @@
 from connect.client import R
 
 from reports.http import GoogleAPIClient, GoogleAPIClientError, obtain_url_for_service
-from ..utils import convert_to_datetime, get_value, parameter_value, get_item_data, get_price
+from ..utils import (convert_to_datetime, get_value, parameter_value_by_name,
+                     get_item_data, get_price)
 
 HEADERS = (
     'Subscription ID', 'Subscription External ID', 'Google Entitlement ID',
@@ -102,7 +103,7 @@ def search_product_primary(parameters):
 
 def _process_google_subscription(subscription, google_client):
     params = subscription.get('params', [])
-    google_customer_id = parameter_value('customer_id', params, "")
+    google_customer_id = parameter_value_by_name('customer_id', params, "")
     entitlement_id = get_entitlement_id(params)
     if not google_customer_id or not entitlement_id:
         res = {'error': 'Subscription has missing google parameters.'}
@@ -196,9 +197,9 @@ def _process_line(subscription, google_client, connect_client):
         subscription.get('external_id', '-'),
         get_entitlement_id(params),
         get_value(subscription, 'connection', 'type'),
-        parameter_value('purchase_type', params),
-        parameter_value('domain', params),
-        parameter_value('customer_id', params),
+        parameter_value_by_name('purchase_type', params),
+        parameter_value_by_name('domain', params),
+        parameter_value_by_name('customer_id', params),
         item_name,
         item_mpn,
         google_data['sku'],
@@ -285,7 +286,7 @@ def get_suspension_reasons(value):
 
 
 def get_entitlement_id(params):
-    param_value = parameter_value('entitlement_id', params, "")
+    param_value = parameter_value_by_name('entitlement_id', params, "")
     if not param_value:
         return param_value
     entitlement_id = param_value.strip('["]')

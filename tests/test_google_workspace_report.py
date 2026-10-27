@@ -255,3 +255,75 @@ def test_generate_json_renderer(progress, client_factory, response_factory, subs
     assert result[1]['subscription_id'] == 'AS-123'
     assert result[1]['vendor_account_id'] == 'VA-610-138'
     assert progress.call_count == 2
+
+
+class _FakeGoogleClient:
+    """Stands in for GoogleAPIClient so the Google data path can be exercised."""
+
+    ENTITLEMENT_ID = 'SUVs8ePhqWG2TE'
+
+    def get_customer_entitlements(self, customer_id):
+        return [{
+            'name': f'accounts/A-1/customers/{customer_id}/entitlements/{self.ENTITLEMENT_ID}',
+            'provisioning_state': 1,
+            'create_time': '2026-01-10T08:00:00Z',
+            'commitment_settings': {
+                'start_time': '2026-01-10T08:00:00Z',
+                'end_time': '2027-01-10T08:00:00Z',
+                'renewal_settings': {'enable_renewal': True},
+            },
+            'parameters': [
+                {'name': 'num_units', 'value': {'int64_value': 25}},
+                {'name': 'max_units', 'value': {'int64_value': 50}},
+                {'name': 'assigned_units', 'value': {'int64_value': 20}},
+            ],
+        }]
+
+    def get_entitlement_offer(self, customer_id, entitlement_id):
+        return {
+            'name': 'accounts/A-1/offers/OFFER-1',
+            'sku': {
+                'name': 'accounts/A-1/skus/1010020027',
+                'product': {'name': 'accounts/A-1/products/Google-Apps'},
+                'marketing_info': {'display_name': 'Google Workspace Business Standard'},
+            },
+            'price_by_resources': [{
+                'price': {
+                    'base_price': {'units': '12', 'nanos': 0, 'currency_code': 'EUR'},
+                    'effective_price': {'units': '10', 'nanos': 500000000, 'currency_code': 'EUR'},
+                },
+            }],
+        }
+
+
+@patch('reports.google_workspace_report.entrypoint.GoogleAPIClient', lambda *a, **kw: _FakeGoogleClient())
+@patch('reports.google_workspace_report.entrypoint.obtain_url_for_service', lambda client: 'https://fake-service.com')
+def test_generate_fills_google_columns(progress, client_factory, response_factory, subscription_request):
+    """Connect returns a product specific parameter id and a separate name, for
+    example id 'PRM-550-104-278-0019' with name 'customer_id'. Looking the
+    parameters up by id left customer_id and entitlement_id empty, so every row
+    reported 'Subscription has missing google parameters.' and '-' in all the
+    google_* columns (LITE-35433)."""
+    subscription = deepcopy(subscription_request)
+    values = {'customer_id': 'Si3BLR4NGdhk0m', 'entitlement_id': _FakeGoogleClient.ENTITLEMENT_ID}
+    for param in subscription['params']:
+        if param['name'] in values:
+            param['value'] = values[param['name']]
+
+    client = client_factory([
+        response_factory(count=1),
+        response_factory(query=None, value=[subscription]),
+    ])
+
+    result = list(generate(client, PARAMETERS, progress, renderer_type='json'))
+
+    assert len(result) == 1
+    row = result[0]
+    assert row['error_details'] == '-'
+    assert row['google_customer_id'] == 'Si3BLR4NGdhk0m'
+    assert row['google_entitlement_id'] == _FakeGoogleClient.ENTITLEMENT_ID
+    assert row['google_entitlement_status'] == 'active'
+    assert row['google_assigned_units'] == 20
+    assert row['google_maximum_units'] == 50
+    assert row['google_commitment_end_date'] == '2027-01-10T08:00:00Z'
+    assert row['google_sku'] == 'accounts/A-1/skus/1010020027'

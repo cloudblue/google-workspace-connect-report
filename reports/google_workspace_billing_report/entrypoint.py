@@ -9,7 +9,8 @@ from connect.client import R
 from dateutil.relativedelta import relativedelta
 
 from reports.http import GoogleAPIClient, GoogleAPIClientError, obtain_url_for_service
-from ..utils import convert_to_datetime, get_value, parameter_value, get_price, parameter_value_by_name
+from ..utils import (convert_to_datetime, get_value, get_price,
+                     parameter_value_by_name)
 
 HEADERS = (
     'Month Year', 'Subscription ID', 'Subscription External ID', 'Subscription External UUID',
@@ -162,7 +163,7 @@ def _get_orders(subscription, google_client, connect_client, params):
         start_date = convert_to_datetime(purchase.get('updated'))
         record['charge_date'] = effective_date
         if request['type'] == 'purchase':
-            purchase_type = parameter_value('purchase_type', request['asset']['params'])
+            purchase_type = parameter_value_by_name('purchase_type', request['asset']['params'])
             record['charge_type'] = 'Transfer' if purchase_type == 'Transfer' else 'New Subscription'
         elif request['type'] == 'change':
             less_than_a_year = abs((effective_date - start_date).days) < 365
@@ -241,7 +242,7 @@ def _get_renewal_dates(purchase_date, cancel_date, period, params):
 
 def _process_google_subscription(subscription, google_client):
     params = subscription.get('params', [])
-    google_customer_id = parameter_value('customer_id', params, "")
+    google_customer_id = parameter_value_by_name('customer_id', params, "")
     entitlement_id = get_entitlement_id(params)
 
     if google_customer_id not in subscriptions_dict.keys():
@@ -403,7 +404,7 @@ def get_google_parameter(value, params):
 
 
 def get_entitlement_id(params):
-    param_value = parameter_value('entitlement_id', params, "")
+    param_value = parameter_value_by_name('entitlement_id', params, "")
     if not param_value:
         return param_value
     entitlement_id = param_value.strip('["]')
