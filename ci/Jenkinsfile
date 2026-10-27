@@ -1,0 +1,248 @@
+#!groovy
+
+library("platform-pipeline-shared-lib")
+
+def image = 'a8n-docker-master-public-local.repo.com.int.zone/int-python'
+def workingDir = '.'
+def dind = false
+def disableConcurrentBuilds = true
+
+def environment = [
+    NETWORK: "$JOB_NAME" + "_default",
+
+    PROJECT_NAME: "google-workspace-connect-report",
+
+    SONAR_FILES_SOURCE: "reports/",
+    SONAR_FILES_TEST: "tests/",
+    SONAR_FILES_EXCLUDED: "",
+
+    CHECKMARX_PROJECT_ID: "7cce4cd0-d6b0-4fc2-9245-aa226421e993",
+
+    RUN_DEPENDENCY_CHECK: false,
+
+    PUBLISH_PACKAGE: false,
+    PACKAGE_TYPE: "zip",
+    JFROG_REPO: "aps-integrations",
+    JFROG_PATH: "", // Leave empty to use the PROJECT_NAME
+    JFROG_URL: "https://repo.com.int.zone/artifactory/",
+
+    FILE_NAME_PYPROJECT_TOML: "pyproject.toml",
+    FILE_NAME_REQUIREMENTS: "requirements.txt",
+    FILE_NAME_REQUIREMENTS_TEST: "requirements-dev.txt",
+    FILE_NAME_CONFIG_EXAMPLE_JSON: "config.example.json",
+]
+
+def pipelineStages = [
+    [name: 'Environment Setup', steps: {
+        env.SEMANTIC_VERSION = sh(returnStdout: true, script: "git describe --exact-match ${env.GIT_COMMIT} --abbrev=0 --tags || echo 'v0.0.0-dev'").trim()
+        env.PROJECT_KEY = "connectors-${env.PROJECT_NAME}"
+
+        if (env.SEMANTIC_VERSION == 'v0.0.0-dev') {
+            env.PROJECT_VERSION = "${env.SEMANTIC_VERSION}" + "." + "${env.BUILD_NUMBER}"
+        } else {
+            env.PROJECT_VERSION = "${env.SEMANTIC_VERSION}"
+        }
+
+        if (env.FILE_NAME_PYPROJECT_TOML == null) {
+            env.HAS_PYPROJECT = false
+        } else {
+            env.HAS_PYPROJECT = fileExists "${env.FILE_NAME_PYPROJECT_TOML}"
+        }
+
+        if (env.FILE_NAME_REQUIREMENTS == null) {
+            env.HAS_REQUIREMENTS = false
+        } else {
+            env.HAS_REQUIREMENTS = fileExists "${env.FILE_NAME_REQUIREMENTS}"
+        }
+
+        if (env.FILE_NAME_REQUIREMENTS_TEST == null) {
+            env.HAS_REQUIREMENTS_TEST = false
+        } else {
+            env.HAS_REQUIREMENTS_TEST = fileExists "${env.FILE_NAME_REQUIREMENTS_TEST}"
+        }
+
+        if (env.FILE_NAME_CONFIG_EXAMPLE_JSON == null) {
+            env.HAS_CONFIG_EXAMPLE_JSON = false
+        } else {
+            env.HAS_CONFIG_EXAMPLE_JSON = fileExists "${env.FILE_NAME_CONFIG_EXAMPLE_JSON}"
+        }
+        
+        env.PROJECT_DELIVERABLE="${env.PROJECT_NAME}-${env.PROJECT_VERSION}.${env.PACKAGE_TYPE}"
+
+        if (env.JFROG_PATH == null) {
+            env.JFROG_UPLOAD_URL = "${env.JFROG_URL}${env.JFROG_REPO}/${env.PROJECT_NAME}/"
+        } else {
+            env.JFROG_UPLOAD_URL = "${env.JFROG_URL}${env.JFROG_REPO}/${env.JFROG_PATH}/"
+        }
+
+        withCredentials([usernamePassword(credentialsId: 'xvantage-partners-integrations', passwordVariable: 'GITHUB_PASS', usernameVariable: 'GITHUB_USER')]) {
+            sh """#!/bin/bash
+                set -euxo pipefail
+
+                git config --global credential.helper store
+                echo "https://\$GITHUB_USER:\$GITHUB_PASS@github.com" > ~/.git-credentials
+            """
+        }
+    }],
+    [name: 'Python Dependency Packager', steps: {
+        if (env.PUBLISH_PACKAGE.toBoolean()) {
+            withCredentials([sshUserPrivateKey(credentialsId: 'ci.jenkins.svc', keyFileVariable: 'SSH_PRIVATE_KEY')]) {
+                sh """#!/bin/bash
+                    set -euxo pipefail
+
+                    /dependency_packager/generate_wheels.sh ./
+                """
+            }
+        }
+    }],
+    [name: 'Install dependencies', steps: {
+        sh """#!/bin/bash
+            set -euxo pipefail
+
+            echo "Installing Python Dependencies..."
+
+            if [ "${env.HAS_PYPROJECT}" = true ]
+            then
+                echo "Using Poetry"
+                poetry install
+                poetry env info
+            elif [ "${env.HAS_REQUIREMENTS}" = true ]
+            then
+                echo "Using Pip"
+                pip install -r ${env.FILE_NAME_REQUIREMENTS}
+
+                if [ "${env.HAS_REQUIREMENTS_TEST}" = true ]
+                then
+                    pip install -r ${env.FILE_NAME_REQUIREMENTS_TEST}
+                fi
+
+                python -m pip freeze
+            fi
+        """
+    }],
+    [name: 'Check Dependencies', steps: {
+        if (env.RUN_DEPENDENCY_CHECK.toBoolean()) {
+            sh """#!/bin/bash
+                set -euxo pipefail
+
+                mkdir -p "/tmp/${env.PROJECT_NAME}"
+                /opt/dependency-check/bin/dependency-check.sh -s . -o "/tmp/${env.PROJECT_NAME}" -f ALL  --nodeAuditSkipDevDependencies --disableNodeJS
+                pip freeze > requirements-full.txt
+                cyclonedx-py -r -i requirements-full.txt -o bom.xml
+            """
+        }
+    }],
+    [name: 'Test Execution', steps: {
+        sh """#!/bin/bash
+            set -euxo pipefail
+
+            if [ "${env.HAS_CONFIG_EXAMPLE_JSON}" = true ]
+            then
+                cp ${env.FILE_NAME_CONFIG_EXAMPLE_JSON} config.json
+
+                if [ -d "test" ]
+                then
+                    cp ${env.FILE_NAME_CONFIG_EXAMPLE_JSON} test/config.json
+                fi
+            fi
+
+            if [ "${env.HAS_PYPROJECT}" = true ]
+            then
+                poetry run pytest
+            elif [ "${env.HAS_REQUIREMENTS}" = true ]
+            then
+                python -m pytest --cov=. --cov-report xml
+            fi
+        """
+    }],
+    [
+        [name: 'SonarQube Analysis', steps: {
+            sh """#!/bin/bash
+                set -euxo pipefail
+                
+                EXCLUSIONS=""
+                if [ "${env.SONAR_FILES_EXCLUDED}" != null ]
+                then
+                    EXCLUSIONS="-Dsonar.exclusions=${env.SONAR_FILES_EXCLUDED}"
+                fi
+
+                /opt/sonar/bin/sonar-scanner \
+                    -Dsonar.host.url=${env.SONAR_URL} \
+                    -Dsonar.login=${env.SONAR_LOGIN} \
+                    -Dsonar.project.tags=connectors \
+                    -Dsonar.projectVersion=${env.PROJECT_VERSION} \
+                    -Dsonar.projectKey=${env.PROJECT_KEY} \
+                    -Dsonar.sources=${env.SONAR_FILES_SOURCE} \
+                    -Dsonar.tests=${env.SONAR_FILES_TEST} \
+                    \$EXCLUSIONS \
+                    -Dsonar.python.coverage.reportPaths=coverage.xml \
+                    -Dsonar.python.pylint=venv/bin/pylint \
+                    -Dsonar.qualitygate.wait=true
+            """
+        }],
+        [name: 'Scan Checkmarx', steps: {
+            if (env.CHECKMARX_PROJECT_ID != null) {
+                withCredentials([usernamePassword(credentialsId: 'checkmarx', passwordVariable: 'CHECKMARX_CLIENT_SECRET', usernameVariable: 'CHECKMARX_CLIENT_ID')]) {
+                    script{
+                        sh """#!/bin/bash
+                            set -euxo pipefail
+
+                            CHECKMARX_PROJECT_NAME=`/opt/cx/checkmarx/cx project list \
+                                --tenant "ingram-micro" \
+                                --client-id "\$CHECKMARX_CLIENT_ID" \
+                                --client-secret "\$CHECKMARX_CLIENT_SECRET" \
+                                --base-auth-uri "https://iam.checkmarx.net/" \
+                                --base-uri "https://ast.checkmarx.net/" \
+                                --filter "ids=${env.CHECKMARX_PROJECT_ID}" \
+                                --format list | grep "Name" | awk '{\$1=\$2=""; print \$0}' | xargs`
+
+                            /opt/cx/checkmarx/cx scan create --file-source "\$WORKSPACE" \
+                                --file-filter '!src/test,!target' \
+                                --agent 'Jenkins' \
+                                --project-name "\$CHECKMARX_PROJECT_NAME" \
+                                --branch "\$GIT_BRANCH" \
+                                --tenant 'ingram-micro' \
+                                --client-id "\$CHECKMARX_CLIENT_ID" \
+                                --client-secret "\$CHECKMARX_CLIENT_SECRET" \
+                                --base-auth-uri 'https://iam.checkmarx.net/' \
+                                --base-uri 'https://ast.checkmarx.net/' \
+                                --sca-resolver '/opt/cx/scaresolver/ScaResolver' \
+                                --sca-resolver-params '--scan-containers' \
+                                --sast-incremental \
+                                --scan-types 'sast,sca,iac-security' \
+                                --async
+                        """
+                    }
+                }
+            }
+        }]
+    ],
+    [name: 'Build Package', steps: {
+        if (env.PUBLISH_PACKAGE.toBoolean()) {
+            sh """#!/bin/bash
+                set -euxo pipefail
+
+                echo "${env.PROJECT_NAME}-${env.PROJECT_VERSION}" >> version.txt
+                zip -r "${env.PROJECT_DELIVERABLE}" . -x "config.json" "ci/*" "vendor/*" ".git/*" ".gitignore" "Jenkinsfile" "tests/*" ".scannerwork/*" "venv/*" ".pytest_cache/*" "*coverage*" "__pycache__" "bom.xml"
+                stat "${env.PROJECT_DELIVERABLE}"
+            """
+        }
+    }],
+    [name: 'Publish Package', steps: {
+        if (env.PUBLISH_PACKAGE.toBoolean()) {
+            if (env.SEMANTIC_VERSION != "v0.0.0-dev") {
+                withCredentials([usernamePassword(credentialsId: 'ci-user', passwordVariable: 'CRED_SECRET', usernameVariable: 'CRED_USER')]) {
+                    sh """#!/bin/bash
+                        set -euxo pipefail
+
+                        curl -sSf -u ${CRED_USER}:${CRED_SECRET} -X PUT -T "${env.PROJECT_DELIVERABLE}" "${env.JFROG_UPLOAD_URL}${env.PROJECT_DELIVERABLE}"
+                    """
+                }
+            } else {
+                archiveArtifacts artifacts: "${env.PROJECT_DELIVERABLE}"
+            }
+        }
+    }]
+]
+
+runPipeline(environment: environment, stages: pipelineStages, image: image, workingDir: workingDir, dind: dind, disableConcurrentBuilds: disableConcurrentBuilds, pipelineContext: this)
